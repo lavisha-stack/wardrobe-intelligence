@@ -1,6 +1,6 @@
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, ActivityIndicator } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useCallback } from "react";
 import Colors from "../../constants/colors";
 import Typography from "../../constants/typography";
 import { supabase } from "../../lib/supabase";
@@ -26,33 +26,44 @@ export default function HomeScreen() {
   const [loadingWardrobe, setLoadingWardrobe] = useState(true);
   const router = useRouter();
 
-  useEffect(() => {
-    const loadHome = async () => {
-      setLoadingWardrobe(true);
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-        const [{ data: profile }, { data: items, error: wardrobeError }] = await Promise.all([
-          supabase.from("profiles").select("name").eq("id", user.id).single(),
-          supabase.from("clothing_items").select("category, subcategory").eq("user_id", user.id),
-        ]);
-        if (profile?.name) setName(profile.name);
-        if (wardrobeError) throw wardrobeError;
-        const wardrobe = items || [];
-        setWardrobeStats({
-          total: wardrobe.length,
-          tops: wardrobe.filter((item) => getWardrobeCategory(item) === "Tops").length,
-          bottoms: wardrobe.filter((item) => getWardrobeCategory(item) === "Bottoms").length,
-          shoes: wardrobe.filter((item) => getWardrobeCategory(item) === "Shoes").length,
-        });
-      } catch (error) {
-        console.error("HOME WARDROBE LOAD ERROR:", error);
-      } finally {
-        setLoadingWardrobe(false);
+  const loadHome = useCallback(async () => {
+    setLoadingWardrobe(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setWardrobeStats({ total: 0, tops: 0, bottoms: 0, shoes: 0 });
+        return;
       }
-    };
-    loadHome();
+
+      const [{ data: profile }, { data: items, error: wardrobeError }] = await Promise.all([
+        supabase.from("profiles").select("name").eq("id", user.id).single(),
+        supabase.from("clothing_items").select("category, subcategory").eq("user_id", user.id),
+      ]);
+
+      if (profile?.name) setName(profile.name);
+      if (wardrobeError) throw wardrobeError;
+
+      const wardrobe = items || [];
+      setWardrobeStats({
+        total: wardrobe.length,
+        tops: wardrobe.filter((item) => getWardrobeCategory(item) === "Tops").length,
+        bottoms: wardrobe.filter((item) => getWardrobeCategory(item) === "Bottoms").length,
+        shoes: wardrobe.filter((item) => getWardrobeCategory(item) === "Shoes").length,
+      });
+    } catch (error) {
+      console.error("HOME WARDROBE LOAD ERROR:", error);
+    } finally {
+      setLoadingWardrobe(false);
+    }
   }, []);
+
+  // Refresh every time Home becomes active, including after returning
+  // from Upload or Wardrobe after adding/deleting an item.
+  useFocusEffect(
+    useCallback(() => {
+      loadHome();
+    }, [loadHome])
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -66,13 +77,13 @@ export default function HomeScreen() {
           <Text style={styles.outfitEmoji}>👗</Text>
           <Text style={styles.outfitTitle}>No outfit generated yet</Text>
           <Text style={styles.outfitSubtitle}>Tap below and let AI create something from your wardrobe.</Text>
-          <View style={{ marginTop: 22, width: "100%" }}><PrimaryButton title="Generate Outfit ✨" onPress={() => {}} /></View>
+          <View style={{ marginTop: 22, width: "100%" }}><PrimaryButton title="Generate Outfit ✨" onPress={() => router.push("/(tabs)/chat")} /></View>
         </SoftCard>
         <SectionTitle>Quick Actions</SectionTitle>
         <View style={styles.row}>
           <ActionTile emoji="👕" title="Add Clothing" onPress={() => router.push("/upload")} />
           <View style={{ width: 14 }} />
-          <ActionTile emoji="🔍" title="Analyze Item" onPress={() => {}} />
+          <ActionTile emoji="🔍" title="Analyze Item" onPress={() => router.push("/upload")} />
         </View>
         <SectionTitle>Your Wardrobe</SectionTitle>
         <SoftCard>
