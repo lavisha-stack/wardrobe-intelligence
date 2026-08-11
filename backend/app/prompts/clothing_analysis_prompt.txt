@@ -4,10 +4,7 @@ Analyze exactly ONE clothing, footwear, or accessory item from the provided imag
 
 If you cannot confidently analyze exactly one item, return a warning instead.
 
-Your analysis has TWO purposes:
-
-1. Analyze the item's fashion and clothing attributes.
-2. Determine whether the photographed item is rotated and, if so, what rotation is needed to display it naturally upright.
+Your analysis has ONE purpose: analyze the item's fashion and clothing attributes and determine whether the image is usable for wardrobe storage.
 
 Return ONLY valid JSON.
 
@@ -30,9 +27,7 @@ The JSON must follow this schema:
   },
   "description": "",
   "confidence": 0.0,
-  "warnings": [],
-  "rotation_needed": 0,
-  "rotation_confidence": 0.0
+  "warnings": []
 }
 
 GENERAL RULES:
@@ -43,109 +38,33 @@ GENERAL RULES:
 - Analyze exactly ONE item.
 - Do not use the background as evidence for the item's attributes.
 - The description should sound natural and helpful, not robotic.
+- The user may upload a rotated or sideways photo. Do NOT analyze or report rotation.
+- Do NOT add rotation fields to the JSON.
+- Do NOT ask the system to rotate, normalize, or otherwise modify the image.
+- The original uploaded photo is preserved exactly as the wardrobe image.
 
 IMAGE QUALITY RULES:
 
-If the image is blurry, contains multiple clothing/accessory items, is too dark, too bright, or the item is not sufficiently visible:
+Only warn/reject the image when it is genuinely unusable for clothing analysis, for example:
+
+- severe blur
+- severe lighting problems that make the item impossible to identify
+- the item is mostly hidden or not sufficiently visible
+- multiple clothing/accessory items are present when exactly one item is expected
+- the image does not contain a clothing, footwear, or accessory item
+
+Do NOT warn merely because:
+
+- the photo is rotated or sideways
+- the background is not plain
+- the item is photographed on a bed, floor, chair, or other normal surface
+- the image is not a professional product photo
+
+If the image is genuinely unusable:
 
 - Return an empty "structured_attributes" object.
-- Add a warning explaining why the user should re-upload the image.
-- Set "rotation_needed" to 0.
-- Set "rotation_confidence" to 0.
-
-ROTATION ANALYSIS:
-
-Determine whether the item itself is upright, sideways, or upside down.
-
-Look ONLY at the item itself.
-
-Do NOT use:
-
-- the background
-- the bed
-- the floor
-- furniture
-- walls
-- room orientation
-- camera orientation
-
-Use the item's own physical structure.
-
-For clothing, consider:
-
-- neckline
-- collar
-- waistband
-- sleeves
-- shoulders
-- hem
-- buttons
-- zippers
-- pockets
-- garment shape
-
-For bottoms, consider:
-
-- waistband
-- leg openings
-- hem
-- pockets
-- overall garment shape
-
-For dresses, consider:
-
-- neckline
-- shoulders
-- waist
-- hem
-
-For footwear, consider:
-
-- sole
-- heel
-- toe
-- shoe opening
-- straps
-- natural standing direction
-
-For bags and accessories, consider their natural orientation and structure.
-
-"rotation_needed" means the CLOCKWISE rotation required to make the item appear naturally upright.
-
-It MUST be exactly one of:
-
-0
-90
-180
-270
-
-Meaning:
-
-0 = already upright
-
-90 = rotate clockwise 90 degrees
-
-180 = rotate clockwise 180 degrees
-
-270 = rotate clockwise 270 degrees
-
-Do not return any other rotation value.
-
-"rotation_confidence" must be a number between 0 and 1.
-
-If the item is already naturally upright, return:
-
-"rotation_needed": 0
-
-If you are uncertain about the item's orientation, choose the most likely orientation and give a lower rotation_confidence.
-
-IMPORTANT:
-
-The rotation value describes the rotation needed for the ORIGINAL photographed item.
-
-Do not assume that EXIF correction has already been performed.
-
-The system will handle EXIF correction separately.
+- Add a concise warning explaining why the user should re-upload the image.
+- Set "confidence" to 0.
 
 CLOTHING ANALYSIS:
 
