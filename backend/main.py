@@ -133,25 +133,23 @@ def analyze_clothing_endpoint(
         )
 
         # -------------------------------------------------
-        # NO ROTATION PROCESSING
+        # IMPORTANT IMAGE PIPELINE RULE
         # -------------------------------------------------
         #
-        # We intentionally do NOT:
+        # Upload analysis deliberately does NOT:
         #
-        # - detect rotation
-        # - rotate the image
+        # - detect clothing rotation
+        # - rotate the uploaded image
         # - remove the background
         # - create a cutout
         #
-        # The original uploaded image is preserved.
+        # The original uploaded image remains the wardrobe
+        # image. The client gives the user simple guidance to
+        # upload an upright photo when possible.
         #
-        # The user can rotate the photo before uploading
-        # if possible, and we give them a recommendation
-        # to upload upright photos.
+        # Cutouts are generated separately and only when an
+        # outfit visualization actually needs an item.
         # -------------------------------------------------
-
-        result["rotation_needed"] = 0
-        result["rotation_confidence"] = 0
 
         # -------------------------------------------------
         # TOTAL TIME
