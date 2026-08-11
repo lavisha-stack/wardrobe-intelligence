@@ -1,7 +1,8 @@
 # backend/main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import time
+import uuid
 
 from app.models.clothing import ClothingAnalysisRequest
 
@@ -82,10 +83,6 @@ def analyze_clothing_endpoint(
 
     try:
 
-        # -------------------------------------------------
-        # STEP 1 — DOWNLOAD ORIGINAL IMAGE
-        # -------------------------------------------------
-
         print("")
         print("STEP 1: DOWNLOADING IMAGE")
 
@@ -110,10 +107,6 @@ def analyze_clothing_endpoint(
             "bytes"
         )
 
-        # -------------------------------------------------
-        # STEP 2 — GEMINI CLOTHING ANALYSIS
-        # -------------------------------------------------
-
         print("")
         print("STEP 2: GEMINI CLOTHING ANALYSIS")
 
@@ -131,29 +124,6 @@ def analyze_clothing_endpoint(
             f"STEP 2 COMPLETE: "
             f"GEMINI ANALYSIS {gemini_time:.2f}s"
         )
-
-        # -------------------------------------------------
-        # IMPORTANT IMAGE PIPELINE RULE
-        # -------------------------------------------------
-        #
-        # Upload analysis deliberately does NOT:
-        #
-        # - detect clothing rotation
-        # - rotate the uploaded image
-        # - remove the background
-        # - create a cutout
-        #
-        # The original uploaded image remains the wardrobe
-        # image. The client gives the user simple guidance to
-        # upload an upright photo when possible.
-        #
-        # Cutouts are generated separately and only when an
-        # outfit visualization actually needs an item.
-        # -------------------------------------------------
-
-        # -------------------------------------------------
-        # TOTAL TIME
-        # -------------------------------------------------
 
         total_time = (
             time.time() - start_time
@@ -186,8 +156,6 @@ def analyze_clothing_endpoint(
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         print("")
 
-        # Re-raise the error so FastAPI correctly returns
-        # a 500 response to the frontend.
         raise
 
 
@@ -213,16 +181,6 @@ def test_supabase(
 # =========================================================
 # ENSURE CUTOUTS EXIST FOR OUTFIT ITEMS
 # =========================================================
-#
-# Called only for items an outfit actually selected.
-# Cutout generation runs locally via rembg — no Gemini
-# call, no quota cost.
-#
-# If cutout generation fails for an item, we log it and
-# move on. The client already falls back to the original
-# image_url when normalized_image_url is missing, so a
-# single failed item never breaks the whole outfit.
-# =========================================================
 
 def ensure_outfit_item_cutouts(
     user_id: str,
@@ -247,7 +205,6 @@ def ensure_outfit_item_cutouts(
         if item.get(
             "normalized_image_url"
         ):
-            # Already cached — reuse it.
             continue
 
         try:
@@ -284,8 +241,6 @@ def ensure_outfit_item_cutouts(
                 f"CUTOUT GENERATION FAILED FOR ITEM "
                 f"{item_id}: {repr(error)}"
             )
-            # Continue with other items rather than
-            # failing the whole outfit response.
             continue
 
 
@@ -293,13 +248,62 @@ def ensure_outfit_item_cutouts(
 # AI ASSIST
 # =========================================================
 
+def normalize_ai_user_id(value):
+    """
+    Normalize the user_id received from the mobile client.
+
+    The normal client payload contains a UUID string. This also
+    safely accepts an accidental {"id": "<uuid>"} object so that
+    a JavaScript object can never reach Postgres as [object Object].
+    """
+
+    original_type = type(value).__name__
+
+    if isinstance(value, dict):
+        value = value.get("id") or value.get("user_id")
+
+    if not isinstance(value, str):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "user_id must be a UUID string",
+                "received_type": original_type,
+            },
+        )
+
+    value = value.strip()
+
+    try:
+        normalized = str(uuid.UUID(value))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "user_id is not a valid UUID",
+            },
+        )
+
+    return normalized
+
+
 @app.post("/ai-assist")
 def ai_assist_endpoint(
     request: dict
 ):
 
-    user_id = request.get(
+    raw_user_id = request.get(
         "user_id"
+    )
+
+    print("")
+    print("=================================================")
+    print("AI ASSIST ENDPOINT REACHED")
+    print("RAW USER ID TYPE:", type(raw_user_id).__name__)
+    print("RAW USER ID:", repr(raw_user_id))
+    print("=================================================")
+
+    user_id = normalize_ai_user_id(
+        raw_user_id
     )
 
     user_message = request.get(
@@ -311,23 +315,13 @@ def ai_assist_endpoint(
         []
     )
 
-    # -----------------------------------------------------
-    # BASIC VALIDATION
-    # -----------------------------------------------------
-
-    if not user_id:
-
-        return {
-            "type": "error",
-            "message": "user_id is required"
-        }
-
     if not user_message:
+        raise HTTPException(
+            status_code=400,
+            detail="message is required"
+        )
 
-        return {
-            "type": "error",
-            "message": "message is required"
-        }
+    print("NORMALIZED USER ID:", user_id)
 
     # -----------------------------------------------------
     # GET USER PROFILE
@@ -386,10 +380,6 @@ def ai_assist_endpoint(
 
     # -----------------------------------------------------
     # GENERATE/CACHE CUTOUTS FOR SELECTED OUTFIT ITEMS
-    # -----------------------------------------------------
-    #
-    # Only runs for items the AI actually picked — not the
-    # whole wardrobe. Reuses cached cutouts when present.
     # -----------------------------------------------------
 
     if (
