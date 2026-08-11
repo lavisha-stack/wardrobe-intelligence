@@ -213,47 +213,43 @@ If more information is needed:
   "message": "Your concise follow-up question"
 }
 
-Otherwise:
+Otherwise return exactly this structure:
 
 {
   "type": "outfits",
   "outfits": [
     {
       "title": "Short descriptive outfit title",
-      "items": {
-        "top": "wardrobe item ID or null",
-        "bottom": "wardrobe item ID or null",
-        "dress": "wardrobe item ID or null",
-        "outerwear": "wardrobe item ID or null",
-        "shoes": "wardrobe item ID",
-        "bag": "wardrobe item ID or null",
-        "other": [
-          "wardrobe item ID"
-        ]
-      },
-      "accessories": [
-        "wardrobe item ID"
+      "items": [
+        "wardrobe item ID for top/dress",
+        "wardrobe item ID for bottom when applicable",
+        "wardrobe item ID for shoes",
+        "wardrobe item ID for outerwear/bag/other pieces when used",
+        "wardrobe item ID for each accessory when used"
       ]
     },
     {
       "title": "Short descriptive outfit title",
-      "items": {
-        "top": "wardrobe item ID or null",
-        "bottom": "wardrobe item ID or null",
-        "dress": "wardrobe item ID or null",
-        "outerwear": "wardrobe item ID or null",
-        "shoes": "wardrobe item ID",
-        "bag": "wardrobe item ID or null",
-        "other": [
-          "wardrobe item ID"
-        ]
-      },
-      "accessories": [
-        "wardrobe item ID"
+      "items": [
+        "wardrobe item ID for top/dress",
+        "wardrobe item ID for bottom when applicable",
+        "wardrobe item ID for shoes",
+        "wardrobe item ID for outerwear/bag/other pieces when used",
+        "wardrobe item ID for each accessory when used"
       ]
     }
   ]
 }
+
+IMPORTANT:
+
+- "items" MUST be a flat JSON array of STRING wardrobe item IDs.
+- Never make "items" an object.
+- Never put category names such as "top" or "shoes" inside the array.
+- Never return wardrobe item objects; return only their exact ID strings.
+- Every ID must exist in CURRENT USER WARDROBE.
+- Include footwear in every outfit.
+- Include accessories in the same "items" array so the client can display them.
 
 ==================================================
 IMPORTANT
