@@ -124,20 +124,6 @@ def analyze_clothing_endpoint(
         raise
 
 
-@app.get("/test-supabase/{user_id}")
-def test_supabase(
-    user_id: str
-):
-    wardrobe = get_user_wardrobe(
-        user_id
-    )
-
-    return {
-        "count": len(wardrobe),
-        "items": wardrobe,
-    }
-
-
 # =========================================================
 # ENSURE CUTOUTS EXIST FOR OUTFIT ITEMS
 # =========================================================
@@ -283,7 +269,6 @@ def normalize_outfit_item_ids(
                 return
 
             if isinstance(value, dict):
-                # Handle accidental {"id": "uuid"} objects.
                 candidate = value.get("id") or value.get("user_id")
                 if isinstance(candidate, str) and candidate in valid_ids:
                     collected.append(candidate)
@@ -316,6 +301,185 @@ def normalize_outfit_item_ids(
     return {
         **result,
         "outfits": normalized_outfits,
+    }
+
+
+# =========================================================
+# OUTFIT COMPOSITION SAFETY CHECK
+# =========================================================
+
+def _placement(item: dict) -> str:
+    """Classify a wardrobe item using its stored wardrobe metadata."""
+    text = " ".join(
+        str(item.get(field) or "")
+        for field in ("category", "subcategory", "description")
+    ).lower()
+
+    if any(word in text for word in (
+        "dress", "jumpsuit", "romper", "gown", "saree", "sari"
+    )):
+        return "full"
+
+    if any(word in text for word in (
+        "shoe", "sneaker", "heel", "sandal", "boot", "flat", "loafer", "footwear"
+    )):
+        return "shoes"
+
+    if any(word in text for word in (
+        "pant", "trouser", "jean", "skirt", "short", "legging",
+        "palazzo", "culotte", "bottom"
+    )):
+        return "bottom"
+
+    if any(word in text for word in (
+        "shirt", "top", "blouse", "tee", "t-shirt", "sweater", "jumper",
+        "hoodie", "jacket", "coat", "blazer", "cardigan", "kurta", "kurti",
+        "tunic", "camisole", "tank"
+    )):
+        return "top"
+
+    return "other"
+
+
+def _choose_fallback_bottom(
+    top: dict,
+    wardrobe: list[dict],
+    already_selected: set[str],
+):
+    """Choose a sensible wardrobe bottom only when Gemini omitted one."""
+    candidates = [
+        item for item in wardrobe
+        if item.get("id") not in already_selected
+        and _placement(item) == "bottom"
+    ]
+
+    if not candidates:
+        return None
+
+    top_seasons = {
+        str(value).lower()
+        for value in (top.get("season") if isinstance(top.get("season"), list) else [top.get("season")])
+        if value
+    }
+    top_occasions = {
+        str(value).lower()
+        for value in (top.get("occasion") if isinstance(top.get("occasion"), list) else [top.get("occasion")])
+        if value
+    }
+
+    def score(item):
+        score_value = 0
+        item_seasons = {
+            str(value).lower()
+            for value in (item.get("season") if isinstance(item.get("season"), list) else [item.get("season")])
+            if value
+        }
+        item_occasions = {
+            str(value).lower()
+            for value in (item.get("occasion") if isinstance(item.get("occasion"), list) else [item.get("occasion")])
+            if value
+        }
+
+        score_value += 3 * len(top_seasons & item_seasons)
+        score_value += 3 * len(top_occasions & item_occasions)
+
+        # Neutral bottoms are generally the safest fallback when the AI
+        # failed to choose one, while still leaving Gemini in control whenever
+        # it supplied a valid bottom itself.
+        color = str(item.get("primary_color") or "").lower()
+        if any(neutral in color for neutral in ("black", "white", "grey", "gray", "beige", "cream", "navy")):
+            score_value += 1
+
+        return score_value
+
+    return max(candidates, key=score)
+
+
+def enforce_outfit_composition(
+    result: dict,
+    wardrobe: list[dict],
+):
+    """
+    Final server-side guardrail for outfit structure.
+
+    Gemini chooses the styling. This function only repairs a structurally
+    invalid response. In particular, a TOP—including a kurti—cannot be
+    returned with footwear alone. If Gemini omits the required bottom, a
+    compatible bottom already present in the user's wardrobe is added.
+    """
+    if result.get("type") != "outfits":
+        return result
+
+    wardrobe_by_id = {
+        str(item.get("id")): item
+        for item in wardrobe
+        if item.get("id")
+    }
+
+    repaired_outfits = []
+
+    for outfit in result.get("outfits", [])[:2]:
+        item_ids = list(dict.fromkeys(outfit.get("items", [])))
+        selected_items = [
+            wardrobe_by_id[item_id]
+            for item_id in item_ids
+            if item_id in wardrobe_by_id
+        ]
+
+        has_full = any(_placement(item) == "full" for item in selected_items)
+        has_top = any(_placement(item) == "top" for item in selected_items)
+        has_bottom = any(_placement(item) == "bottom" for item in selected_items)
+        has_shoes = any(_placement(item) == "shoes" for item in selected_items)
+
+        # A full-body garment does not need a bottom. A top always does.
+        if has_top and not has_full and not has_bottom:
+            top = next(item for item in selected_items if _placement(item) == "top")
+            fallback_bottom = _choose_fallback_bottom(
+                top,
+                wardrobe,
+                set(item_ids),
+            )
+
+            if fallback_bottom:
+                item_ids.insert(1, str(fallback_bottom["id"]))
+                print(
+                    "OUTFIT COMPOSITION REPAIR: added bottom",
+                    fallback_bottom["id"],
+                    "for top",
+                    top["id"],
+                )
+            else:
+                raise RuntimeError(
+                    "AI Assist selected a top but the wardrobe contains no compatible bottom."
+                )
+
+        # Footwear is mandatory for every outfit. Gemini normally supplies it,
+        # but keep the response structurally valid if it forgets.
+        if not has_shoes:
+            shoe_candidates = [
+                item for item in wardrobe
+                if item.get("id") not in item_ids
+                and _placement(item) == "shoes"
+            ]
+            if shoe_candidates:
+                item_ids.append(str(shoe_candidates[0]["id"]))
+                print(
+                    "OUTFIT COMPOSITION REPAIR: added footwear",
+                    shoe_candidates[0]["id"],
+                )
+            else:
+                raise RuntimeError(
+                    "AI Assist did not select footwear and the wardrobe contains no footwear item."
+                )
+
+        repaired_outfits.append({
+            **outfit,
+            "items": item_ids,
+        })
+
+    return {
+        **result,
+        "outfits": repaired_outfits,
     }
 
 
@@ -386,6 +550,11 @@ def ai_assist_endpoint(
     )
 
     result = normalize_outfit_item_ids(
+        result,
+        wardrobe,
+    )
+
+    result = enforce_outfit_composition(
         result,
         wardrobe,
     )
