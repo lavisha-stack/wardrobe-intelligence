@@ -60,6 +60,12 @@ OR
 
 and MUST include footwear.
 
+A wardrobe item classified as a TOP must always be paired with a BOTTOM unless it is explicitly classified in the supplied wardrobe data as a dress or other full-body one-piece garment.
+
+This rule also applies to kurtis, kurtas, tunics, long tops, blouses, shirts, tees, sweaters, and similar items when their wardrobe category/subcategory identifies them as tops. A kurti is a top for outfit-building purposes and therefore requires a compatible bottom.
+
+Never return an outfit containing only a top and shoes when a bottom is required. Choose a suitable bottom from the user's wardrobe.
+
 Footwear must ONLY come from the user's footwear wardrobe.
 
 Outerwear is optional.
@@ -249,6 +255,8 @@ IMPORTANT:
 - Never return wardrobe item objects; return only their exact ID strings.
 - Every ID must exist in CURRENT USER WARDROBE.
 - Include footwear in every outfit.
+- If the selected main garment is a top, including a kurti/kurta/tunic, include a compatible bottom from CURRENT USER WARDROBE.
+- Only omit a bottom when the selected main garment is explicitly a dress or other full-body one-piece garment.
 - Include accessories in the same "items" array so the client can display them.
 
 ==================================================
